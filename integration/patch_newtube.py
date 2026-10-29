@@ -8,9 +8,19 @@ activity = root / "smarttubetv/src/stmobile/java/com/newtube/mobile/ui/browse/Mo
 layout = root / "smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml"
 module_gradle = root / "smarttubetv/build.gradle"
 root_gradle = root / "build.gradle"
+shared_constants = root / "SharedModules/constants.gradle"
 for p in (activity, layout, module_gradle, root_gradle):
     if not p.exists():
         raise SystemExit(f"Required NewTube source file missing: {p}")
+
+# The upstream branch declares compileSdk 37, which is not yet published in the
+# Android SDK repository used by hosted runners. Compile this debug verification build
+# against API 36 while retaining upstream targetSdk behavior; do not commit this override
+# back to the upstream project.
+if shared_constants.exists():
+    constants = shared_constants.read_text()
+    constants = constants.replace("compileSdkVersion = 37", "compileSdkVersion = 36", 1)
+    shared_constants.write_text(constants)
 
 # Copy bridge + component into the actual NewTube mobile source set.
 dest = root / "smarttubetv/src/stmobile/java/com/newtube/liquidglass"
