@@ -102,7 +102,7 @@ if "mobile_liquid_glass_nav" not in x:
 g = root_gradle.read_text()
 if "compose-compiler-gradle-plugin" not in g:
     g = g.replace("classpath 'com.android.tools.build:gradle:9.2.1'",
-                  "classpath 'com.android.tools.build:gradle:9.2.1'\n        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.10'", 1)
+                  "classpath 'com.android.tools.build:gradle:9.2.1'\n        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.3.21'", 1)
     root_gradle.write_text(g)
 m = module_gradle.read_text()
 if "org.jetbrains.kotlin.plugin.compose" not in m:
@@ -111,18 +111,18 @@ if "org.jetbrains.kotlin.plugin.compose" not in m:
 if "compose = true" not in m:
     m = m.replace("    buildFeatures {\n        buildConfig = true\n    }",
                   "    buildFeatures {\n        buildConfig = true\n        compose = true\n    }", 1)
-if "io.github.kyant0:backdrop:2.0.1" not in m:
+if "io.github.kyant0:backdrop:2.0.0" not in m:
     # Add to the existing module dependency block at the end, avoiding assumptions about formatting.
     m += """
 
 // NEWTUBE(liquid-glass): Compose overlay for the mobile bottom navigation.
 dependencies {
-    implementation platform('androidx.compose:compose-bom:2026.09.00')
+    implementation platform('androidx.compose:compose-bom:2026.06.01')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.animation:animation'
     implementation 'io.github.kyant0:backdrop:2.0.1'
-    implementation 'io.github.kyant0:shapes:1.2.1'
+    implementation 'io.github.kyant0:shapes:1.2.0'
 }
 """
 module_gradle.write_text(m)
