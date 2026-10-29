@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.weight
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,8 +74,8 @@ fun LiquidGlassBottomBar(
                     lens(22.dp.toPx(), 18.dp.toPx(), chromaticAberration = false)
                 },
                 highlight = { Highlight.Default },
-                shadow = { Shadow(alpha = 0.20f, radius = 18.dp.toPx(), spread = 1.dp.toPx()) },
-                innerShadow = { InnerShadow(radius = 8.dp.toPx(), alpha = 0.12f) },
+                shadow = { Shadow(alpha = 0.20f, radius = 18.dp) },
+                innerShadow = { InnerShadow(radius = 8.dp, alpha = 0.12f) },
                 onDrawSurface = { drawRect(surface) }
             )
             .padding(horizontal = 5.dp, vertical = 5.dp),
@@ -133,7 +132,7 @@ private fun RowScope.LiquidNavigationItem(
                             lens(12.dp.toPx(), 10.dp.toPx())
                         },
                         highlight = { Highlight.Default },
-                        shadow = { Shadow(alpha = 0.18f, radius = 8.dp.toPx()) },
+                        shadow = { Shadow(alpha = 0.18f, radius = 8.dp) },
                         onDrawSurface = { drawRect(accent.copy(alpha = 0.24f)) }
                     )
             )
