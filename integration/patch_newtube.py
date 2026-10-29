@@ -26,6 +26,22 @@ if "LiquidGlassNavBridge" not in s:
     s = s.replace("    private BottomNavigationView mBottomNav;\n",
                   "    private BottomNavigationView mBottomNav;\n    private LiquidGlassNavBridge mLiquidGlassNav;\n")
     s = s.replace("        setupBottomNav();\n", "        setupBottomNav();\n        setupLiquidGlassNav();\n", 1)
+    s = s.replace("""            if (!mSuppressNavCallback) {
+                onNavItemChosen(item.getItemId());
+            }
+            return true;""", """            if (!mSuppressNavCallback) {
+                onNavItemChosen(item.getItemId());
+            }
+            if (mLiquidGlassNav != null) mLiquidGlassNav.refreshFromMenu();
+            return true;""", 1)
+    s = s.replace("""            } else {
+                onNavItemChosen(item.getItemId());
+            }
+        });""", """            } else {
+                onNavItemChosen(item.getItemId());
+            }
+            if (mLiquidGlassNav != null) mLiquidGlassNav.refreshFromMenu();
+        });""", 1)
     anchor = "    private void setupBottomNav() {\n"
     method = """    private void setupLiquidGlassNav() {
         mLiquidGlassNav = new LiquidGlassNavBridge(
