@@ -1,0 +1,91 @@
+name: Build NewTube Liquid Glass APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integration/**'
+      - '.github/workflows/build-newtube-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newtube-liquid-glass-apk
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out integration workspace
+        uses: actions/checkout@v4
+        with:
+          path: integration-workspace
+
+      - name: Check out official NewTube source
+        uses: actions/checkout@v4
+        with:
+          repository: aleixrodriala/newtube
+          ref: main
+          path: newtube
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Apply liquid-glass integration to actual NewTube source
+        run: |
+          python3 integration-workspace/integration/patch_newtube.py newtube
+          git -C newtube diff --check
+          grep -q 'LiquidGlassNavBridge' newtube/smarttubetv/src/stmobile/java/com/newtube/mobile/ui/browse/MobileBrowseActivity.java
+          grep -q 'mobile_liquid_glass_nav' newtube/smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml
+          grep -q 'io.github.kyant0:backdrop:2.0.1' newtube/smarttubetv/build.gradle
+
+      - name: Build NewTube mobile debug APK
+        working-directory: newtube
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          SOURCE_DATE_EPOCH: '1793232000'
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :smarttubetv:assembleStmobileDebug
+
+      - name: Verify APK and generate checksums
+        working-directory: newtube
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find smarttubetv/build/outputs/apk -type f -name '*.apk' -print -exec cp {} dist/ \;
+          test "$(find dist -maxdepth 1 -type f -name '*.apk' | wc -l)" -gt 0
+          for apk in dist/*.apk; do
+            unzip -t "$apk"
+            sha256sum "$apk"
+          done | tee dist/SHA256SUMS.txt
+          {
+            echo "NewTube liquid-glass build"
+            echo "Upstream: https://github.com/aleixrodriala/newtube"
+            echo "Build task: :smarttubetv:assembleStmobileDebug"
+            echo "Commit: $(git rev-parse HEAD)"
+            echo "Built at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } > dist/BUILD-INFO.txt
+
+      - name: Publish APK as downloadable GitHub Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: newtube-liquid-glass-debug-apk
+          path: newtube/dist/*
+          if-no-files-found: error
+          retention-days: 30
