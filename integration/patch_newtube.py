@@ -13,14 +13,8 @@ for p in (activity, layout, module_gradle, root_gradle):
     if not p.exists():
         raise SystemExit(f"Required NewTube source file missing: {p}")
 
-# The upstream branch declares compileSdk 37, which is not yet published in the
-# Android SDK repository used by hosted runners. Compile this debug verification build
-# against API 36 while retaining upstream targetSdk behavior; do not commit this override
-# back to the upstream project.
-if shared_constants.exists():
-    constants = shared_constants.read_text()
-    constants = constants.replace("compileSdkVersion = 37", "compileSdkVersion = 36", 1)
-    shared_constants.write_text(constants)
+# Keep upstream compileSdk unchanged. Current upstream and liquid-glass
+# dependencies require Android API 37; the workflow installs that platform.
 
 # Copy bridge + component into the actual NewTube mobile source set.
 dest = root / "smarttubetv/src/stmobile/java/com/newtube/liquidglass"
