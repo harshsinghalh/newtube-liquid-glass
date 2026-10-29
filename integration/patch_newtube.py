@@ -16,7 +16,7 @@ for p in (activity, layout, module_gradle, root_gradle):
 dest = root / "smarttubetv/src/stmobile/java/com/newtube/liquidglass"
 dest.mkdir(parents=True, exist_ok=True)
 shutil.copy2(Path(__file__).parent / "LiquidGlassBottomBar.kt", dest / "LiquidGlassBottomBar.kt")
-shutil.copy2(Path(__file__).parent / "LiquidGlassNavBridge.kt", dest / "LiquidGlassNavBridge.kt")
+shutil.copy2(Path(__file__).parent / "src/main/kotlin/com/newtube/liquidglass/LiquidGlassNavBridge.kt", dest / "LiquidGlassNavBridge.kt")
 
 s = activity.read_text()
 if "LiquidGlassNavBridge" not in s:
@@ -101,7 +101,7 @@ if "io.github.kyant0:backdrop:2.0.1" not in m:
 
 // NEWTUBE(liquid-glass): Compose overlay for the mobile bottom navigation.
 dependencies {
-    implementation platform('androidx.compose:compose-bom:2025.12.00')
+    implementation platform('androidx.compose:compose-bom:2026.09.00')
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.animation:animation'
