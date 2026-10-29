@@ -121,7 +121,7 @@ dependencies {
     implementation 'androidx.compose.ui:ui'
     implementation 'androidx.compose.foundation:foundation'
     implementation 'androidx.compose.animation:animation'
-    implementation 'io.github.kyant0:backdrop:2.0.1'
+    implementation 'io.github.kyant0:backdrop:2.0.0'
     implementation 'io.github.kyant0:shapes:1.2.0'
 }
 """
