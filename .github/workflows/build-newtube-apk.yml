@@ -44,7 +44,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android build tools
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        run: sdkmanager "platform-tools" "platforms;android-37" "build-tools;37.0.0"
 
       - name: Apply liquid-glass integration to actual NewTube source
         run: |
@@ -52,7 +52,7 @@ jobs:
           git -C newtube diff --check
           grep -q 'LiquidGlassNavBridge' newtube/smarttubetv/src/stmobile/java/com/newtube/mobile/ui/browse/MobileBrowseActivity.java
           grep -q 'mobile_liquid_glass_nav' newtube/smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml
-          grep -q 'io.github.kyant0:backdrop:2.0.1' newtube/smarttubetv/build.gradle
+          grep -q 'io.github.kyant0:backdrop:2.0.0' newtube/smarttubetv/build.gradle
 
       - name: Build NewTube mobile debug APK
         working-directory: newtube
