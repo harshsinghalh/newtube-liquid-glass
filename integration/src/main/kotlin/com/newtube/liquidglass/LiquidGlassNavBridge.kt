@@ -2,99 +2,177 @@ package com.newtube.liquidglass
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.view.View
+import android.view.ViewGroup
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
+import com.qmdeve.liquidglass.widget.LiquidGlassView
 
 /**
- * Adapts the existing View-based NewTube navigation to Compose without moving navigation logic.
- *
- * The backdrop is a cropped bitmap rendered from the real Android View hierarchy beneath the bar.
- * It is refreshed on feed scroll/layout and tab-menu changes; this is intentionally a snapshot
- * bridge, because Backdrop cannot directly sample Android View siblings.
+ * Uses AndroidLiquidGlassView to refract the live Android feed and Backdrop to animate the
+ * selected tab lens. The original BottomNavigationView remains the sole navigation model.
  */
 class LiquidGlassNavBridge(
-    private val root: View,
-    private val composeView: ComposeView,
-    private val legacyNav: BottomNavigationView,
-    private val content: RecyclerView
+    private val source: ViewGroup,
+    private val overlay: ComposeView,
+    private val nav: BottomNavigationView,
+    private val feed: RecyclerView,
+    private val nativeGlass: LiquidGlassView
 ) {
-    private val destinations = mutableStateOf<List<NavigationItem>>(emptyList())
-    private val selectedIndex = mutableStateOf(0)
-    private val background = mutableStateOf<ImageBitmap?>(null)
+    private val selected = mutableIntStateOf(0)
+    private val count = mutableIntStateOf(0)
+    private val image = mutableStateOf<ImageBitmap?>(null)
+    private val inset = mutableIntStateOf(0)
+    private var previousId = Int.MIN_VALUE
+    private var previousCount = -1
+    private var disposed = false
+
+    private val scrollListener = object : RecyclerView.OnScrollListener() {
+        override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) = capture()
+    }
+    private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        overlay.post {
+            refreshFromMenu()
+            updateGlassSize()
+            capture()
+        }
+    }
 
     init {
-        composeView.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-        composeView.setContent {
-            val image = background.value
+        overlay.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+        )
+        overlay.setBackgroundColor(Color.TRANSPARENT)
+        overlay.isClickable = false
+        overlay.isFocusable = false
+        overlay.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+
+        val density = nativeGlass.resources.displayMetrics.density
+        val dark = (nativeGlass.resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        nativeGlass.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 36f * density
+            setColor(if (dark) Color.argb(88, 25, 29, 38) else Color.argb(146, 245, 248, 253))
+            setStroke((density).toInt().coerceAtLeast(1),
+                if (dark) Color.argb(70, 255, 255, 255) else Color.argb(90, 255, 255, 255))
+        }
+        nativeGlass.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        nativeGlass.isClickable = false
+        nativeGlass.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        nativeGlass.setCornerRadius(36f * density)
+        nativeGlass.setRefractionHeight(20f * density)
+        nativeGlass.setRefractionOffset(66f * density)
+        nativeGlass.setDispersion(0.34f)
+        nativeGlass.setBlurRadius(1.15f)
+        nativeGlass.setTintAlpha(0.045f)
+        nativeGlass.bind(source)
+
+        // Preserve native icons, labels, badges and click targets; only remove the M3/M2 pill
+        // so the Backdrop-rendered selection lens is the single highlighted state.
+        nav.setBackgroundColor(Color.TRANSPARENT)
+        nav.setItemActiveIndicatorEnabled(false)
+
+        overlay.setContent {
+            val currentImage = image.value
             val backdrop = rememberCanvasBackdrop {
-                if (image != null) drawImage(image)
+                currentImage?.let { drawImage(it) }
             }
-            val items = destinations.value
             LiquidGlassBottomBar(
-                items = items,
-                selectedIndex = selectedIndex.value.coerceIn(0, maxOf(0, items.lastIndex)),
+                selectedIndex = selected.intValue,
+                tabCount = count.intValue,
                 backdrop = backdrop,
-                onItemSelected = { index ->
-                    items.getOrNull(index)?.let { legacyNav.selectedItemId = it.id }
+                bottomInset = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    inset.intValue.toDp()
                 }
             )
         }
-        legacyNav.visibility = View.INVISIBLE
-        content.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                captureBackground()
-            }
-        })
-        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> captureBackground() }
-        composeView.post { refreshFromMenu() }
+
+        feed.addOnScrollListener(scrollListener)
+        source.addOnLayoutChangeListener(layoutListener)
+        overlay.addOnLayoutChangeListener(layoutListener)
+        nav.addOnLayoutChangeListener(layoutListener)
+        nativeGlass.addOnLayoutChangeListener(layoutListener)
+        overlay.post {
+            refreshFromMenu()
+            updateGlassSize()
+            capture()
+        }
     }
 
+    /** Refresh after navigation callbacks or a dynamic BrowsePresenter menu rebuild. */
     fun refreshFromMenu() {
-        val menu = legacyNav.menu
-        val items = (0 until menu.size()).map { index ->
-            val item = menu.getItem(index)
-            NavigationItem(item.title?.toString().orEmpty(), glyphFor(item.title?.toString().orEmpty()), item.itemId)
+        if (disposed) return
+        val size = nav.menu.size()
+        val id = nav.selectedItemId
+        val systemInset = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            nav.rootWindowInsets?.getInsets(
+                android.view.WindowInsets.Type.navigationBars()
+            )?.bottom ?: 0
+        } else {
+            @Suppress("DEPRECATION")
+            nav.rootWindowInsets?.systemWindowInsetBottom ?: 0
         }
-        destinations.value = items
-        val selectedId = legacyNav.selectedItemId
-        selectedIndex.value = items.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
-        composeView.post { captureBackground() }
+        if (inset.intValue != systemInset) inset.intValue = systemInset
+        if (id == previousId && size == previousCount) return
+
+        previousId = id
+        previousCount = size
+        count.intValue = size
+        selected.intValue = (0 until size)
+            .firstOrNull { nav.menu.getItem(it).itemId == id } ?: 0
     }
 
-    private fun glyphFor(label: String): String {
-        val lower = label.lowercase()
-        return when {
-            "home" in lower -> "⌂"
-            "subscription" in lower -> "▤"
-            "history" in lower -> "◷"
-            "download" in lower -> "↓"
-            "you" in lower -> "●"
-            else -> "•"
-        }
+    private fun updateGlassSize() {
+        if (disposed || nativeGlass.height <= 0) return
+        nativeGlass.setCornerRadius(nativeGlass.height / 2f)
     }
 
-    private fun captureBackground() {
-        if (!composeView.isAttachedToWindow || composeView.width <= 0 || composeView.height <= 0 ||
-            root.width <= 0 || root.height <= 0) return
+    /** Capture only the bottom-dock-sized region rather than allocating a full-screen bitmap. */
+    private fun capture() {
+        if (disposed || !overlay.isAttachedToWindow ||
+            overlay.width <= 0 || overlay.height <= 0 ||
+            source.width <= 0 || source.height <= 0) return
+
+        val sourceAt = IntArray(2)
+        val overlayAt = IntArray(2)
+        source.getLocationInWindow(sourceAt)
+        overlay.getLocationInWindow(overlayAt)
         val bitmap = try {
-            Bitmap.createBitmap(composeView.width, composeView.height, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(overlay.width, overlay.height, Bitmap.Config.ARGB_8888)
         } catch (_: OutOfMemoryError) {
             return
         }
-        val canvas = Canvas(bitmap)
-        val previousAlpha = composeView.alpha
-        composeView.alpha = 0f
-        canvas.translate(-composeView.left.toFloat(), -composeView.top.toFloat())
-        root.draw(canvas)
-        composeView.alpha = previousAlpha
-        background.value = bitmap.asImageBitmap()
+        try {
+            Canvas(bitmap).apply {
+                translate(
+                    -(overlayAt[0] - sourceAt[0]).toFloat(),
+                    -(overlayAt[1] - sourceAt[1]).toFloat()
+                )
+            }.also(source::draw)
+            image.value = bitmap.asImageBitmap()
+        } catch (_: RuntimeException) {
+            bitmap.recycle()
+        }
+    }
+
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+        feed.removeOnScrollListener(scrollListener)
+        source.removeOnLayoutChangeListener(layoutListener)
+        overlay.removeOnLayoutChangeListener(layoutListener)
+        nav.removeOnLayoutChangeListener(layoutListener)
+        nativeGlass.removeOnLayoutChangeListener(layoutListener)
     }
 }

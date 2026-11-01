@@ -6,10 +6,11 @@ on:
     paths:
       - 'integration/**'
       - '.github/workflows/build-newtube-apk.yml'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: newtube-liquid-glass-apk
@@ -25,11 +26,11 @@ jobs:
         with:
           path: integration-workspace
 
-      - name: Check out official NewTube source
+      - name: Check out the exact NewTube source used by the supplied APK
         uses: actions/checkout@v4
         with:
           repository: aleixrodriala/newtube
-          ref: main
+          ref: 756e7e56acba61ccdf5b4d5a802963f0eb62616c
           path: newtube
           submodules: recursive
           fetch-depth: 1
@@ -40,56 +41,90 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK command-line tools
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: '14742923'
           packages: platform-tools
           accept-android-sdk-licenses: true
 
-      - name: Install Android build tools
-        run: sdkmanager --channel=3 "platform-tools" "platforms;android-37" "build-tools;36.0.0"
-
-      - name: Apply liquid-glass integration to actual NewTube source
+      - name: Install Android 17 platform and build tools
         run: |
+          set -euo pipefail
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0"
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          # This upstream revision declares compileSdkVersion = 37. AGP still resolves the
+          # integer hash as android-37, while SDK Manager publishes 37.0 in android-37.0.
+          if [ ! -e "$ANDROID_HOME/platforms/android-37" ]; then
+            ln -s android-37.0 "$ANDROID_HOME/platforms/android-37"
+          fi
+          test -f "$ANDROID_HOME/platforms/android-37/android.jar"
+
+      - name: Apply and verify the dual-engine Liquid Glass integration
+        run: |
+          set -euo pipefail
           python3 integration-workspace/integration/patch_newtube.py newtube
           git -C newtube diff --check
           grep -q 'LiquidGlassNavBridge' newtube/smarttubetv/src/stmobile/java/com/newtube/mobile/ui/browse/MobileBrowseActivity.java
-          grep -q 'mobile_liquid_glass_nav' newtube/smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml
+          grep -q 'mobile_liquid_glass_view' newtube/smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml
+          grep -q 'mobile_liquid_glass_overlay' newtube/smarttubetv/src/stmobile/res/layout/activity_mobile_browse.xml
           grep -q 'io.github.kyant0:backdrop:2.0.0' newtube/smarttubetv/build.gradle
+          grep -q 'com.qmdeve.liquidglass:core:1.1.0' newtube/smarttubetv/build.gradle
 
       - name: Build NewTube mobile debug APK
         working-directory: newtube
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          SOURCE_DATE_EPOCH: '1793232000'
+          SOURCE_DATE_EPOCH: '1790962143'
         run: |
+          set -euo pipefail
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace :smarttubetv:assembleStmobileDebug
 
-      - name: Verify APK and generate checksums
+      - name: Verify APKs and generate checksums
         working-directory: newtube
         run: |
           set -euo pipefail
           mkdir -p dist
-          find smarttubetv/build/outputs/apk -type f -name '*.apk' -print -exec cp {} dist/ \;
+          find smarttubetv/build/outputs -type f -name '*.apk' -print -exec cp {} dist/ \;
           test "$(find dist -maxdepth 1 -type f -name '*.apk' | wc -l)" -gt 0
-          for apk in dist/*.apk; do
-            unzip -t "$apk"
-            sha256sum "$apk"
-          done | tee dist/SHA256SUMS.txt
+          for apk in dist/*.apk; do unzip -t "$apk"; done
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           {
-            echo "NewTube liquid-glass build"
-            echo "Upstream: https://github.com/aleixrodriala/newtube"
+            echo "Product: NewTube 1.15.0 + dual-engine Liquid Glass navigation"
+            echo "Upstream repository: https://github.com/aleixrodriala/newtube"
+            echo "Upstream commit: 756e7e56acba61ccdf5b4d5a802963f0eb62616c"
             echo "Build task: :smarttubetv:assembleStmobileDebug"
-            echo "Commit: $(git rev-parse HEAD)"
-            echo "Built at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "Glass engines: AndroidLiquidGlassView 1.1.0 + Backdrop 2.0.0 / Shapes 1.2.0"
+            echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "Signing: debug key (not upstream release signing)"
           } > dist/BUILD-INFO.txt
 
-      - name: Publish APK as downloadable GitHub Actions artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: newtube-liquid-glass-debug-apk
+          name: newtube-liquid-glass-1.15.0-apk
           path: newtube/dist/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish APK files as a GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: newtube-liquid-glass-1.15.0-build-${{ github.run_number }}
+          name: NewTube 1.15.0 — Liquid Glass build ${{ github.run_number }}
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            NewTube 1.15.0 built from the exact upstream commit used by the supplied base APK.
+
+            The bottom navigation keeps NewTube's original Material icons, labels, badges and callbacks. The glass dock combines AndroidLiquidGlassView's Android 13+ refraction/dispersion with the Compose Multiplatform Backdrop animated selected-tab lens.
+
+            This is a debug-signed test APK, not an upstream release-signed build. Review BUILD-INFO.txt and SHA256SUMS.txt before installing.
+          files: |
+            newtube/dist/*.apk
+            newtube/dist/BUILD-INFO.txt
+            newtube/dist/SHA256SUMS.txt
