@@ -172,6 +172,8 @@ dependencies {
     implementation 'com.qmdeve.liquidglass:core:1.1.0'
 }
 """
-    module.write_text(m)
+    # Upstream's Gradle file contains a few pre-existing whitespace-only lines.
+    # Once we edit the file, git diff --check sees them as additions; normalize them here.
+    module.write_text("\n".join(line.rstrip() for line in m.splitlines()) + "\n")
 
 print(f"Applied NewTube Liquid Glass integration to {root}")
